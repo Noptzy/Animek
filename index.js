@@ -1,28 +1,37 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const httpLogger = require('./src/middlewares/httpLogger');
-const rateLimiter = require('./src/utils/rateLimiter');
-const logger = require('./src/config/logger');
-const { initializeCrashNotifier } = require('./src/utils/crashNotifier');
-
-initializeCrashNotifier();
+const helmet = require('helmet');
+const morgan = require('morgan');
+const { logger } = require('./src/utils/logger');
+const { globalLimiter, scrapeLimiter } = require('./src/middleware/rateLimiter');
+const { getScrapeOtakudesu } = require('./src/controller/animeController');
+const { startScheduler } = require('./src/services/scheduler');
 
 const app = express();
-const PORT = process.env.PORT;
 const corsOptions = {
     origin: "*"
 }
+const port = process.env.PORT || process.env.port || 3000;
 
-app.use(cors(corsOptions));
-app.use(express.json());
-app.use(httpLogger);
-app.use(rateLimiter); 
+app.use(cors(corsOptions))
+app.use(helmet())
+app.use(morgan('combined', {
+    stream: {
+        write: (msg) => logger.info(msg.trim())
+    }
+}))
+app.use(express.json())
+app.use(express.urlencoded({ extended: true }))
+app.use(globalLimiter)
+
+app.get('/scrape/otakudesu', scrapeLimiter, getScrapeOtakudesu);
 
 app.use((req, res) => {
-    return res.status(404).json({error: "404 Not Found"});
-});
+    res.status(404).json({ message: "Not Found" })
+})
 
-app.listen(PORT, () => {
-  logger.info(`Server running on port ${PORT}`);
-});
+app.listen(port, () => {
+    logger.info(`Server running at http://localhost:${port}`);
+    startScheduler();
+})
